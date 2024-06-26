@@ -1,0 +1,864 @@
+---
+title: "CS5801 Coursework Template Proforma"
+author: "ANDREY PAK, ID:2354976"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+version: 1
+---
+
+# 0. Instructions 
+
+```{r}
+# Add code here to load all the required libraries with `library()`.  
+# Do not include any `install.package()` for any required packages in this rmd file.
+library(ggplot2)
+library(Hmisc)
+library(gridExtra)
+library(grid)
+library(mice)
+library(dplyr)
+library(forcats)
+
+
+
+```
+
+
+# 1. Organise and clean the data
+
+## 1.1 Subset the data into the specific dataset allocated
+ 
+```{r}
+# Only change the value for SID 
+# Assign your student id into the variable SID, for example:
+SID <- 2354976                  # This is an example, replace 2101234 with your actual ID
+SIDoffset <- (SID %% 50) + 1    # Your SID mod 50 + 1
+
+load("car-analysis-data.Rda")
+# Now subset the car data set
+# Pick every 50th observation starting from your offset
+# Put into your data frame named mydf (you can rename it)
+mydf <- cars.analysis[seq(from=SIDoffset,to=nrow(cars.analysis),by=50),]
+```
+
+```{r}
+car_df <- mydf
+```
+
+## 1.2 Data quality analysis plan
+
+There are various checks that can be applied to the cars dataset to improve the quality which are listed below:
+
+1. Examine the dataset's structure, assessing the number of rows and columns. Verify each variable's data type (e.g., numeric, factor, character) ensuring they align with expected formats.
+
+2. Identify and quantify missing values in the dataset, such as NA, NaN, or blanks. Analyze patterns of missingness to determine what type of imputation is appropriate.
+
+3. Inspect categorical columns to identify any discrepancies in their factors, such as spelling errors, incorrect abbreviations, or spaces before or after the category type.
+
+4.Assess numeric variables for negative values. Determine the cause (e.g., data entry errors) and decide on corrective actions like transformation or removal.
+
+5.Identify and quantify negative values in the numeric column such as mileage, price, min_mpg, max_mpg, and engine_size.
+
+6.Identify and quantify zero values in the numeric column such as mileage, price, min_mpg, max_mpg, and engine_size.
+
+7.Identify and quantify outliers in the numeric columns su ch as mileage, price, min_mpg, max_mpg, and engine_size and decide on appropriate responses, such as data correction or exclusion.
+
+
+
+## 1.3 Data quality analysis findings
+
+```{r}
+# Examination of the structure of data
+summary(car_df)
+str(car_df)
+```
+```{r}
+# Examination for missing values
+colSums(is.na(car_df))
+```
+```{r}
+# Examination for any duplicates in brand, fuel, and drivetrain
+table(car_df$brand)
+table(car_df$fuel)
+table(car_df$drivetrain)
+```
+
+```{r}
+# Examination for negative values in numeric columns
+neg_year <- sum(car_df$year < 0, na.rm = TRUE)
+neg_mileage <- sum(car_df$mileage < 0, na.rm = TRUE)
+neg_price <- sum(car_df$price < 0, na.rm = TRUE)
+neg_min_mpg <- sum(car_df$min_mpg < 0, na.rm = TRUE)
+neg_max_mpg <- sum(car_df$max_mpg < 0, na.rm = TRUE)
+neg_engine_size <- sum(car_df$engine_size < 0, na.rm = TRUE)
+
+print(paste("Number of negative values in year:", neg_year))
+print(paste("Number of negative values in mileage:", neg_mileage))
+print(paste("Number of negative values in price:", neg_price))
+print(paste("Number of negative values in min_mpg:", neg_min_mpg))
+print(paste("Number of negative values in max_mpg:", neg_max_mpg))
+print(paste("Number of negative values in engine_size:", neg_engine_size))
+```
+
+```{r}
+# Examination for zero values in numeric colums 
+zero_year <- sum(car_df$year == 0, na.rm = TRUE)
+zero_mileage <- sum(car_df$mileage == 0, na.rm = TRUE)
+zero_price <- sum(car_df$price == 0, na.rm = TRUE)
+zero_min_mpg <- sum(car_df$min_mpg == 0, na.rm = TRUE)
+zero_max_mpg <- sum(car_df$max_mpg == 0, na.rm = TRUE)
+zero_engine_size <- sum(car_df$engine_size == 0, na.rm = TRUE)
+
+print(paste("Number of zero values in year:", zero_year))
+print(paste("Number of zero values in mileage:", zero_mileage))
+print(paste("Number of zero values in price:", zero_price))
+print(paste("Number of zero values in min_mpg:", zero_min_mpg))
+print(paste("Number of zero values in max_mpg:", zero_max_mpg))
+print(paste("Number of zero values in engine_size:", zero_engine_size))
+```
+```{r}
+# Calculating the number of outliers in the numeric columns
+outliers <- function(data) {
+  Q1 <- quantile(data, 0.25, na.rm = TRUE)
+  Q3 <- quantile(data, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  outliers <- data[data < lower_bound | data > upper_bound & !is.na(data)]
+  return(outliers)
+}
+
+year_iqr <- outliers(car_df$year)
+mileage_iqr <- outliers(car_df$mileage)
+engine_size_iqr <- outliers(car_df$engine_size)
+min_mpg_iqr <- outliers(car_df$min_mpg)
+max_mpg_iqr <- outliers(car_df$max_mpg)
+price_iqr <- outliers(car_df$price)
+
+print(paste("Number of outliers in year :", length(year_iqr)))
+print(paste("Number of outliers in mileage :", length(mileage_iqr)))
+print(paste("Number of outliers in engine_size :", length(engine_size_iqr)))
+print(paste("Number of outliers in min_mpg :", length(min_mpg_iqr)))
+print(paste("Number of outliers in max_mpg :", length(max_mpg_iqr)))
+print(paste("Number of outliers in price :", length(price_iqr)))
+```
+
+## 1.4 Data cleaning  
+
+1. The data type of columns: brand, automatic_taransmission, fuel, drivetrain, damaged, first_owner, navigation_system, bluetooth, third_row_seating and heated_seats are character. These columns should be converted to factors.
+
+2. There are "Unknown" values in the columns fuel and drivetrain, 1 and 3 respectively. They should be replaced with NA for further imputation.
+
+3. There are zero values in the columns mileage, min_mpg, max_mpg. 2, 11 and 3 respectively. They should be replaced with NA for further imputation.
+
+5. There are outliers in the following columns: year (21), mileage (17), engine_size (39), min_mpg (73), max_mpg (67). Outliers should be replaced with NA for further imputation.
+
+6. Imputation of missing values using method "MICE". MICE imputation is considered superior to mean, median, or mode imputation because it preserves the variability and relationships within the data. MICE generates multiple plausible values, reflecting the natural uncertainty and distribution in the dataset. [1]
+
+7. There are spelling mistakes in "fuel" and "brand" columns. 
+   Fuel: "Petrol" written as "Pertol"
+   Brand: "Alfa Romeo" written as "Alfa", "Land Rover" written as "Land".
+   These values should be replaced with correct spelling.
+
+8. There are two negative values is max_mpg column. They should be converted to positive values.
+
+N.B The outliers and values such as Unknown, Zero were replaced with NA, because removing them can lead to loss of information and influence the model performance.
+
+
+
+```{r}
+# Converting the type of categorical columns to factors
+car_df$brand <- as.factor(car_df$brand)
+car_df$automatic_transmission <- as.factor(car_df$automatic_transmission)
+car_df$fuel <- as.factor(car_df$fuel)
+car_df$drivetrain <- as.factor(car_df$drivetrain)
+car_df$damaged <- as.factor(car_df$damage)
+car_df$first_owner <- as.factor(car_df$first_owner)
+car_df$navigation_system <- as.factor(car_df$navigation_system)
+car_df$bluetooth <- as.factor(car_df$bluetooth)
+car_df$third_row_seating <- as.factor(car_df$third_row_seating)
+car_df$heated_seats <- as.factor(car_df$heated_seats)
+
+# Checking the data type of the columns
+str(car_df)
+```
+
+
+```{r}
+# Replacing "unknown" values in fuel and drivetrain with NA
+car_df$fuel[car_df$fuel == "Unknown"] <- NA
+car_df$drivetrain[car_df$drivetrain == "Unknown"] <- NA
+
+
+# Check for unknown values again
+print(paste("Number of unknown values in fuel:", sum(car_df$fuel == "Unknown", na.rm = TRUE)))
+print(paste("Number of unknown values in drivetrain:", sum(car_df$drivetrain == "Unknown", na.rm = TRUE)))
+```
+
+```{r}
+# Replacing of the zero values in mileage, min_mpg, max_mpg with NA
+car_df$min_mpg[car_df$min_mpg == 0] <- NA
+car_df$max_mpg[car_df$max_mpg == 0] <- NA
+car_df$mileage[car_df$mileage == 0] <- NA
+
+# Examination for zero values again
+print(paste("Number of zero values in Mileage:", sum(car_df$mileage == 0, na.rm = TRUE)))
+print(paste("Number of zero values in Min MPG:", sum(car_df$min_mpg == 0, na.rm = TRUE)))
+print(paste("Number of zero values in Max MPG:", sum(car_df$max_mpg == 0, na.rm = TRUE)))
+```
+```{r}
+# Replacing outliers with NA in column: year, mileage, engine_size, min_mpg, max_mpg.
+
+# For Year
+Q1_year <- quantile(car_df$year, 0.25, na.rm = TRUE)
+Q3_year <- quantile(car_df$year, 0.75, na.rm = TRUE)
+IQR_year <- Q3_year - Q1_year
+
+car_df$year <- ifelse(car_df$year < (Q1_year - 1.5 * IQR_year) | 
+                              car_df$year > (Q3_year + 1.5 * IQR_year), 
+                              NA, car_df$year)
+
+# For Mileage
+Q1_mileage <- quantile(car_df$mileage, 0.25, na.rm = TRUE)
+Q3_mileage <- quantile(car_df$mileage, 0.75, na.rm = TRUE)
+IQR_mileage <- Q3_mileage - Q1_mileage
+
+car_df$mileage <- ifelse(car_df$mileage < (Q1_mileage - 1.5 * IQR_mileage) | 
+                              car_df$mileage > (Q3_mileage + 1.5 * IQR_mileage), 
+                              NA, car_df$mileage)
+                             
+
+# For Engine Size
+Q1_engine_size <- quantile(car_df$engine_size, 0.25, na.rm = TRUE)
+Q3_engine_size <- quantile(car_df$engine_size, 0.75, na.rm = TRUE)
+IQR_engine_size <- Q3_engine_size - Q1_engine_size
+
+car_df$engine_size <- ifelse(car_df$engine_size < (Q1_engine_size - 1.5 * IQR_engine_size) | 
+                              car_df$engine_size > (Q3_engine_size + 1.5 * IQR_engine_size), 
+                              NA, car_df$engine_size)
+                              
+
+# For Min MPG
+Q1_min_mpg <- quantile(car_df$min_mpg, 0.25, na.rm = TRUE)
+Q3_min_mpg <- quantile(car_df$min_mpg, 0.75, na.rm = TRUE)
+IQR_min_mpg <- Q3_min_mpg - Q1_min_mpg
+
+car_df$min_mpg <- ifelse(car_df$min_mpg < (Q1_min_mpg - 1.5 * IQR_min_mpg) | 
+                              car_df$min_mpg > (Q3_min_mpg + 1.5 * IQR_min_mpg), 
+                              NA, car_df$min_mpg)
+                              
+
+# For Max MPG
+Q1_max_mpg <- quantile(car_df$max_mpg, 0.25, na.rm = TRUE)
+Q3_max_mpg <- quantile(car_df$max_mpg, 0.75, na.rm = TRUE)
+IQR_max_mpg <- Q3_max_mpg - Q1_max_mpg
+
+car_df$max_mpg <- ifelse(car_df$max_mpg < (Q1_max_mpg - 1.5 * IQR_max_mpg) | 
+                              car_df$max_mpg > (Q3_max_mpg + 1.5 * IQR_max_mpg), 
+                              NA, car_df$max_mpg)
+                              
+
+```
+
+```{r}
+# Impute Missing Values 
+imputed_list <- c(brand = "", year = "pmm", mileage = "pmm", engine_size = "pmm",
+                  automatic_transmission = "", fuel = "cart", drivetrain = "cart",
+                  min_mpg = "pmm", max_mpg = "pmm", damaged = "logreg",
+                  first_owner = "logreg", navigation_system = "", 
+                  bluetooth = "", third_row_seating = "",
+                  heated_seats = "", price = "")
+
+
+
+imputed_data <- mice(car_df, method = imputed_list, m = 5, maxit = 50, seed = 500)
+car_df <- complete(imputed_data, 1)
+```
+
+```{r}
+# Check for missing values again
+colSums(is.na(car_df))
+```
+
+```{r}
+# Update the spelling mistakes in "fuel" and "brand" column
+car_df$fuel <- gsub("Pertol", "Petrol", car_df$fuel)
+car_df$brand <- gsub("Alfa", "Alfa Romeo", car_df$brand)
+car_df$brand <- gsub("Land", "Land Rover", car_df$brand)
+
+# Convert the categorical columns to factors again
+car_df$brand <- as.factor(car_df$brand)
+car_df$fuel <- as.factor(car_df$fuel)
+
+# Check if the spelling mistakes are corrected
+table(car_df$fuel)
+table(car_df$brand)
+```
+
+```{r}
+# Convert the negative values to positive values in column max_mpg
+car_df$max_mpg <- abs(car_df$max_mpg)
+# Check if the negative values are converted to positive values
+sum(car_df$max_mpg < 0)
+```
+```{r}
+summary(car_df)
+```
+
+```{r}
+str(car_df)
+```
+
+
+
+# 2. Exploratory Data Analysis (EDA)
+
+## 2.1 EDA plan
+
+Univariate Analysis:
+
+Numerical Variables: These include year, mileage, engine_size, min_mpg, max_mpg, and price. To examine these variables, we will employ histograms and boxplots, which are effective for visualizing data distributions and identifying potential outliers. Calculate the relationship between the numerical variables using spearman function.
+
+Categorical Variables: This category comprises brand, fuel, drivetrain, damaged, first_owner, navigation_system, bluetooth, third_row_seating, and heated_seats. Barplot will be the primary tool for assessing the distribution of these variables, helping in the detection of outliers. 
+
+Multi-variate analysis:
+
+Relationship with price: We will use scatter plots to examine the relationship between price and the numerical variables. We will also use boxplots to examine the relationship between price and the categorical variables.
+
+Relationship with first_owner: We will use barplots to examine the relationship between first_owner and the categorical variables.
+
+## 2.2 EDA execution   
+
+```{r}
+# Examine the mean, median, minimum, and maximum of the numerical variables. 
+num_data <- car_df[, c("year", "mileage", "engine_size", "min_mpg", "max_mpg", "price")]
+summary(num_data)
+```
+
+```{r} 
+# Calculate the relationship between the numerical variables
+spearman_cor <- round(cor(num_data, method = "spearman"),2)
+print("Spearman Cross-Correlation Matrix:")
+print(spearman_cor)
+```
+
+```{r}
+# Histogram and density plot of year
+hist_year <- ggplot(car_df, aes(x=year)) +
+                 geom_histogram(aes(y=after_stat(density)),      
+                 binwidth=1,
+                 colour="black", fill="grey") +
+                 geom_density(alpha=.2, fill="blue") +
+                 xlab("") +
+                 ggtitle("year")
+
+# Histogram and density plot of mileage
+hist_mileage <- ggplot(car_df, aes(x=mileage)) +
+                 geom_histogram(aes(y=after_stat(density)),      
+                 binwidth=10000,
+                 colour="black", fill="grey") +
+                 geom_density(alpha=.2, fill="blue") +
+                 xlab("") +
+                 ggtitle("mileage")
+
+# Histogram and density plot of engine_size
+hist_engine_size <- ggplot(car_df, aes(x=engine_size)) +
+                 geom_histogram(aes(y=after_stat(density)),      
+                 binwidth=1,
+                 colour="black", fill="grey") +
+                 geom_density(alpha=.2, fill="blue") +
+                 xlab("") +
+                 ggtitle("engine_size")
+
+# Histogram and density plot of min_mpg
+hist_min_mpg <- ggplot(car_df, aes(x=min_mpg)) +
+                 geom_histogram(aes(y=after_stat(density)),      
+                 binwidth=1,
+                 colour="black", fill="grey") +
+                 geom_density(alpha=.2, fill="blue") +
+                 xlab("") +
+                 ggtitle("min_mpg")
+
+# Histogram and density plot of max_mpg
+hist_max_mpg <- ggplot(car_df, aes(x=max_mpg)) +
+                 geom_histogram(aes(y=after_stat(density)),      
+                 binwidth=1,
+                 colour="black", fill="grey") +
+                 geom_density(alpha=.2, fill="blue") +
+                 xlab("") +
+                 ggtitle("max_mpg")
+
+# Histogram and density plot of price
+hist_price <- ggplot(car_df, aes(x=price)) +
+                 geom_histogram(aes(y=after_stat(density)),      
+                 binwidth=1000,
+                 colour="black", fill="grey") +
+                 geom_density(alpha=.2, fill="blue") +
+                 xlab("") +
+                 ggtitle("price")
+
+
+grid.arrange(hist_year, hist_mileage, hist_engine_size, hist_min_mpg, hist_max_mpg, hist_price, ncol=2, nrow =3,top = textGrob("Histogram and density plot", gp = gpar(fontface = "bold", fontsize = 14)))
+```
+
+```{r}
+# Boxplot of year 
+box_year <- ggplot(car_df, aes(x=year)) +
+                 geom_boxplot(fill = 'gray', color = 'black', outlier.color = "blue", notch = TRUE) +
+                 xlab("") +
+                 ggtitle("Boxplot of year")
+
+# Boxplot of mileage
+box_mileage <- ggplot(car_df, aes(x=mileage)) +
+                 geom_boxplot(fill = 'gray', color = 'black', outlier.color = "blue", notch = TRUE) +
+                 xlab("") +
+                 ggtitle("Boxplot of mileage")
+
+# Boxplot of engine_size
+box_engine_size <- ggplot(car_df, aes(x=engine_size)) +
+                 geom_boxplot(fill = 'gray', color = 'black', outlier.color = "blue", notch = TRUE) +
+                 xlab("") +
+                 ggtitle("Boxplot of engine_size")
+
+# Boxplot of min_mpg
+box_min_mpg <- ggplot(car_df, aes(x=min_mpg)) +
+                 geom_boxplot(fill = 'gray', color = 'black', outlier.color = "blue", notch = TRUE) +
+                 xlab("") +
+                 ggtitle("Boxplot of min_mpg")
+
+# Boxplot of max_mpg
+box_max_mpg <- ggplot(car_df, aes(x=max_mpg)) +
+                 geom_boxplot(fill = 'gray', color = 'black', outlier.color = "blue", notch = TRUE) +
+                 xlab("") +
+                 ggtitle("Boxplot of max_mpg")
+
+# Boxplot of price
+box_price <- ggplot(car_df, aes(x=price)) +
+                 geom_boxplot(fill = 'gray', color = 'black', outlier.color = "blue", notch = TRUE) +
+                 xlab("") +
+                 ggtitle("Boxplot of price")
+
+
+grid.arrange(box_year, box_mileage, box_engine_size, box_min_mpg, box_max_mpg, box_price, ncol=2, nrow =3, top = textGrob("Boxplots", gp = gpar(fontface = "bold", fontsize = 14)))
+```
+
+```{r}
+# Barplot for brand
+ggplot(car_df, aes(x = reorder(brand, -table(brand)[brand]))) +
+    geom_bar(fill = 'gray', color = 'black', stat = "count") +
+    xlab("") + geom_text(stat = "count", aes(label = ..count..), vjust = -0.3) +
+    ggtitle("Barplot of Brand") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+```{r}
+# Barplot of fuel 
+ggplot(car_df, aes(x=fuel)) +
+                 geom_bar(fill = 'gray', color = 'black') +
+                 xlab("") +geom_text(stat = "count", aes(label = ..count..), vjust = -0.3)+
+                 ggtitle("Barplot of fuel")+
+                 theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+ #Barplot for drivetrain 
+ggplot(car_df, aes(x=drivetrain)) +
+                 geom_bar(fill = 'gray', color = 'black') +
+                 xlab("") + geom_text(stat = "count", aes(label = ..count..), vjust = -0.3) +
+                 ggtitle("Barplot of drivetrain")+
+                 theme(axis.text.x = element_text(angle = 45, hjust = 1))
+``` 
+
+```{r}
+ # Barplot for automatic_transmission
+bar_atm <- ggplot(car_df, aes(x=automatic_transmission)) +
+                 geom_bar(fill = 'gray', color = 'black') +
+                 xlab("") + geom_text(stat = "count", aes(label = ..count..), vjust = -0.3) +
+                 ggtitle("atm")
+                
+#Barplot for damaged 
+ bar_damaged <- ggplot(car_df, aes(x=damaged)) +
+                 geom_bar(fill = 'gray', color = 'black') +
+                 xlab("") + geom_text(stat = "count", aes(label = ..count..), vjust = -0.3) +
+                 ggtitle("damaged")
+                  
+ #Barplot for first_owner
+ bar_first_owner <- ggplot(car_df, aes(x=first_owner)) +
+                 geom_bar(fill = 'gray', color = 'black') +
+                 xlab("") + geom_text(stat = "count", aes(label = ..count..), vjust = -0.3) +
+                 ggtitle("first_owner")
+ #Barplot for navigation_system
+ bar_navigation_system <- ggplot(car_df, aes(x=navigation_system)) +
+                 geom_bar(fill = 'gray', color = 'black') +
+                 xlab("") + geom_text(stat = "count", aes(label = ..count..), vjust = -0.3) +
+                 ggtitle("navigation_system")
+ #Barplot for bluetooth
+ bar_bluetooth <- ggplot(car_df, aes(x=bluetooth)) +
+                 geom_bar(fill = 'gray', color = 'black') +
+                 xlab("") + geom_text(stat = "count", aes(label = ..count..), vjust = -0.3) +
+                 ggtitle("bluetooth")
+ #Barplot for third_row_seats
+ bar_third_row_seating <- ggplot(car_df, aes(x=third_row_seating)) +
+                 geom_bar(fill = 'gray', color = 'black') +
+                 xlab("") + geom_text(stat = "count", aes(label = ..count..), vjust = -0.3) +
+                 ggtitle("third_row_seats")
+ #Barplot for heated_seats
+ bar_heated_seats <- ggplot(car_df, aes(x=heated_seats)) +
+                 geom_bar(fill = 'gray', color = 'black') +
+                 xlab("") + geom_text(stat = "count", aes(label = ..count..), vjust = -0.3) +
+                 ggtitle("heated_seats")
+  
+grid.arrange(bar_atm, bar_damaged, bar_first_owner, bar_navigation_system, bar_bluetooth, bar_third_row_seating, bar_heated_seats,nrow = 2 ,top = textGrob("BarPlots", gp = gpar(fontface = "bold", fontsize = 14)))
+```
+
+```{r}
+#Scatterplot of price vs year with regression line
+ggplot(car_df, aes(x=year, y=price)) +
+  geom_point() +
+  geom_smooth(method = "lm", color="blue") +
+  ggtitle("Scatterplot of price vs year")+
+  theme_bw()
+
+```
+```{r}
+#Scatterplot of price vs mileage
+ggplot(car_df, aes(x=mileage, y=price)) +
+  geom_point() +
+  geom_smooth(method = "lm", color="blue") +
+  ggtitle("Scatterplot of price vs mileage")+
+  theme_bw()
+```
+```{r}
+#Scatterplot of price vs engine_size 
+ggplot(car_df, aes(x=engine_size, y=price)) +
+  geom_point() +
+  geom_smooth(method = "lm", color="blue") +
+  ggtitle("Scatterplot of price vs engine_size")+
+  theme_bw()
+```
+```{r}
+#Scatterplot of price vs min_mpg 
+ggplot(car_df, aes(x=min_mpg, y=price)) +
+  geom_point() +
+  geom_smooth(method = "lm", color="blue") +
+  ggtitle("Scatterplot of price vs min_mpg")+
+  theme_bw()
+```
+```{r}
+#Scatterplot of price vs max_mpg 
+ggplot(car_df, aes(x=max_mpg, y=price)) +
+  geom_point() +
+  geom_smooth(method = "lm", color="blue") +
+  ggtitle("Scatterplot of price vs max_mpg")+
+  theme_bw()
+```
+```{r}
+# Boxplot of price by brand
+median_brand <- fct_reorder(car_df$brand, car_df$price, median, .desc = TRUE)
+ggplot(car_df, aes(x = median_brand, y = price, fill = brand)) +
+  geom_boxplot() +
+  ggtitle("Boxplot of price by brand")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+```
+```{r}
+# Boxplot of price by fuel
+median_fuel <- fct_reorder(car_df$fuel, car_df$price, median, .desc = TRUE)
+box_fuel <- ggplot(car_df, aes(x = median_fuel, y = price, fill = fuel)) +
+  geom_boxplot() +
+  ggtitle("price by fuel")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+# Boxplot of price by drivetrain
+median_drivetrain <- fct_reorder(car_df$drivetrain, car_df$price, median, .desc = TRUE)
+box_drivetrain <- ggplot(car_df, aes(x = median_drivetrain, y = price, fill = drivetrain)) +
+  geom_boxplot() +
+  ggtitle("price by drivetrain")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+
+grid.arrange(box_fuel, box_drivetrain, nrow = 1 ,top = textGrob("BoxPlots", gp = gpar(fontface = "bold", fontsize = 14)))
+```
+
+```{r}
+# Boxplot of price by damaged
+box_damaged <- ggplot(car_df, aes(x = damaged, y = price, fill = damaged)) +
+  geom_boxplot() +
+  ggtitle("price by damaged")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "none")
+# Boxplot of price by first_owner
+box_first_owner <- ggplot(car_df, aes(x = first_owner, y = price, fill = first_owner)) +
+  geom_boxplot() +
+  ggtitle("price by first_owner")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "none")
+# Boxplot of price by navigation_system
+box_navigation_system <- ggplot(car_df, aes(x = navigation_system, y = price, fill = navigation_system)) +
+  geom_boxplot() +
+  ggtitle("price by navigation_system")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "none")
+# Boxplot of price by bluetooth
+box_bluetooth <- ggplot(car_df, aes(x = bluetooth, y = price, fill = bluetooth)) +
+  geom_boxplot() +
+  ggtitle("price by bluetooth")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "none")
+# Boxplot of price by third_row_seating
+box_third_row_seating <- ggplot(car_df, aes(x = third_row_seating, y = price, fill = third_row_seating)) +
+  geom_boxplot() +
+  ggtitle("price by third_row_seating")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "none")
+# Boxplot of price by heated_seats
+box_heated_seats <- ggplot(car_df, aes(x = heated_seats, y = price, fill = heated_seats)) +
+  geom_boxplot() +
+  ggtitle("price by heated_seats")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "none")
+
+grid.arrange(box_damaged, box_first_owner, box_navigation_system, box_bluetooth, box_third_row_seating, box_heated_seats, nrow = 2)
+```
+```{r}
+# Barplot of first_owner vs brand
+ggplot(car_df, aes(x = brand, fill = first_owner)) +
+  geom_bar(position = "dodge") +
+  labs(title = "First Owner Status Across Car Brands",
+       x = "Brand",
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+```{r}
+# Boxplot Year by first_owner
+box_first_year <- ggplot(car_df, aes(x = first_owner, y = year, fill = first_owner)) +
+                  geom_boxplot() +
+                  ggtitle("Year by first_owner")+
+                  theme_bw()+
+                  theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "none")
+
+
+
+# Boxplot Myleage by first_owner
+box_first_mileage <- ggplot(car_df, aes(x = first_owner, y = mileage, fill = first_owner)) +
+                     geom_boxplot() +
+                     ggtitle("Mileage by first_owner")+
+                     theme_bw()+
+                     theme(axis.text.x = element_text(angle = 0, hjust = 1), legend.position = "none")
+
+
+grid.arrange(box_first_year, box_first_mileage, nrow = 1)
+
+```
+
+```{r}
+# Barplot of first_owner vs fuel
+ggplot(car_df, aes(x = fuel, fill = first_owner)) +
+  geom_bar(position = "dodge") +
+  labs(title = "First Owner Status Across Fuel Types",
+       x = "Fuel Type",
+       y = "Count") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+```{r}
+# Barchar of first_owner vs damaged
+fo_dmg <- ggplot(car_df, aes(x = first_owner, fill = damaged)) + 
+          geom_bar(position = "dodge") + 
+          labs(x = "First Owner Status", y = "Count", fill = "Damaged Status") + 
+          theme_minimal() +
+          ggtitle("Damaged vs First Owner")
+
+# Barchar of first_owner vs navigation_system
+fo_nav <- ggplot(car_df, aes(x = first_owner, fill = navigation_system)) + 
+          geom_bar(position = "dodge") + 
+          labs(x = "First Owner Status", y = "Count", fill = "Navigation System Status") + 
+          theme_minimal() +
+          ggtitle("Navigation System vs First Owner")
+
+# Barchar of first_owner vs bluetooth
+fo_blt <- ggplot(car_df, aes(x = first_owner, fill = bluetooth)) + 
+          geom_bar(position = "dodge") + 
+          labs(x = "First Owner Status", y = "Count", fill = "Bluetooth Status") + 
+          theme_minimal() +
+          ggtitle("Bluetooth vs First Owner")
+
+# Barchar of first_owner vs third_row_seating
+fo_trs <- ggplot(car_df, aes(x = first_owner, fill = third_row_seating)) + 
+          geom_bar(position = "dodge") + 
+          labs(x = "First Owner Status", y = "Count", fill = "Third Row Seating Status") + 
+          theme_minimal() +
+          ggtitle("Third Row Seating vs First Owner")
+
+# Barchar of first_owner vs heated_seats
+
+fo_hst <- ggplot(car_df, aes(x = first_owner, fill = heated_seats)) + 
+          geom_bar(position = "dodge") + 
+          labs(x = "First Owner Status", y = "Count", fill = "Heated Seats Status") + 
+          theme_minimal() +
+          ggtitle("Heated Seats vs First Owner")
+
+grid.arrange(fo_dmg, fo_nav, fo_blt, fo_trs, fo_hst, nrow = 3)
+
+```
+
+## 2.3 EDA summary of results
+
+Summary of univariate analysis:
+
+Dataset primarily consists of relatively new cars (manufactured 2020) with relatively low mileage. Dataset has a mix of cars with small to mid-range engine sizes, with smaller engines being more prevalent (2.4 liters on average). Most cars priced around 30,000.
+
+The most popular brand is Alfa Romeo and MINI, and the least popular is Porsche and Suzuki. The vast majority of cars use Petrol (364). Dataset primarily consists of cars with automatic transmission(368) and bluetooth (348). Most cars have no damage (312) and no third row seating (357). Number of cars with navigation system (216) are the same as number of cars without navigation system (194). Most cars have no heated seats (236). Number of car with only one owner (213) are slightly more than number of cars with more than one owner (197).
+
+Summary of multivariate analysis:
+
+The price is higher for a car produced later and with lower mileage and bigger engine size. As for max mpg and min mpg, it show that the price is higher for a car with higher max mpg and lower min mpg. As for max hp and min hp, they show negative correlation with price.
+
+The most expensive cars is Audi, whereas the cheapest is Suzuki. The hybrid cars has highest price. The presence of options such as four wheel drive, navigation system, Bluetooth, third row seating and heated seats make the price higher. As for first owner, it shows that the price is higher for a car with only one owner. As for damaged, it shows that the price is higher for a car with no damage.
+
+The Barplot summary for first owner shows that: the cars with only one owner are primarily newer, which explain the lower mileage.
+
+
+## 2.4 Additional insights and issues
+
+Strong negative correlation between Year and Mileage: This means that newer cars have lower mileage. This finding might influence pricing strategies for used cars based on year and mileage. An insight to explore might be whether this holds true across all car brands and types or if there are exceptions. 
+
+Moderate negative correlations Involving Engine Size and MPG: The correlation between engine size and min_mpg, as well as engine size and max_mpg, is moderately negative. This indicates that larger engines tend to have lower fuel efficiency. This insight could lead to a more nuanced analysis of consumer preferences regarding engine performance versus fuel efficiency, and how this affects the pricing of different types of vehicles.
+
+Price Correlations: The moderate negative correlation between price and mileage could be influenced by multiple factors, such as the car’s condition, brand, and model popularity. It could be beneficial to see if this correlation is consistent across different car segments (e.g., luxury vs. economy).
+
+Fuel Efficiency (MPG) and Price: The weak negative correlation between min_mpg/max_mpg and price suggests that fuel efficiency does not heavily influence the price in this dataset. However, this is contrary to some market expectations where fuel efficiency is a selling point. Further analysis could reveal whether certain types of vehicles or brands are exceptions to this trend.
+
+
+# 3. Modelling
+
+## 3.1 Explain your analysis plan
+
+In the cleaning process, we systematically identified and addressed inaccuracies in numerical and categorical variables. Numerical anomalies, such as NA, zero values, and outliers, along with "Unknown" values in categorical variables, were substituted with NA for subsequent imputation, to prevent data loss and adverse impacts on model performance. The MICE method was selected for imputation due to it generates multiple plausible data values, preserving the natural variability and complex relationships in the dataset, applicable to various variable types. Additionally, we corrected spelling errors in the 'fuel' and 'brand' variables, crucial for maintaining accurate categorical levels and ensuring precise identification of car brands. Finally we converted character variables to factors as it is crucial for statistical modeling and analysis, as it allows models to correctly interpret categorical data.
+
+EDA plan directly informs the modeling of used car prices by identifying key variables that influence price, such as car age, mileage, engine size (Spearman Cross-Correlation method and Scatterplot were used) and specific features like four-wheel drive and navigation systems (Box plot). Understanding the popularity of brands and the premium attached to luxury and hybrid vehicles allows for more accurate feature selection and prioritization in the model. This knowledge ensures that the predictive model focuses on the most impactful factors, leading to more reliable and precise price predictions.
+
+
+## 3.2 Build a model for car price
+ 
+```{r}
+m1.lm <- lm(car_df$price ~ car_df$brand + car_df$year + car_df$mileage + car_df$engine_size +   
+                           car_df$automatic_transmission + car_df$fuel + car_df$drivetrain + car_df$min_mpg + 
+                           car_df$max_mpg + car_df$damaged + car_df$first_owner + car_df$navigation_system +  
+                           car_df$bluetooth + car_df$third_row_seating + car_df$heated_seats)
+summary(m1.lm)
+```
+From the 1st model output, we can see that variables such as heated_seats, bluetooth, first_owner, min_mpg and max_mpg are not significant. We will remove these variables and build a new model.
+
+```{r}
+m2.lm <- lm(car_df$price ~ car_df$brand + car_df$year + car_df$mileage + car_df$engine_size +    
+                           car_df$automatic_transmission + car_df$fuel + car_df$drivetrain +
+                           car_df$damaged + car_df$navigation_system + car_df$third_row_seating)
+
+summary(m2.lm)
+```
+From the 2nd model output we can see that model is looking promising, as all the coefficients are significant, we don't need to remove any. However, we should check if this model is best, by using step function to find the minimal adequate model.
+
+```{r}
+mam.lm <- step(m1.lm)
+summary(mam.lm)
+```
+We can see that 2nd model is most appropriate model as the it's values are the same as the minimal adequate model. $r^2$ 76.99% of the variability in car prices is explained by the variables included in the model. This is a fairly high value, indicating a good fit. The extremely low F-statistic p-value (less than 2.2e-16) is very significant, meaning the independent variables reliably predict the car price.
+
+
+## 3.3 Critique model using relevant diagnostics
+
+```{r}
+plot(mam.lm)
+```
+Residuals vs Fitted: the residuals show a slight pattern of increasing  variance across the range of fitted values, which may assume heteroscedasticity. Also there are some outliers 63, 333, 351 that we might need to look into more because they could be influential points affecting our model.
+
+Q-Q residuals:most of our points stick close to the dotted line, especially in the middle of the distribution, which is a good sign. But there are some points straying off at the ends of the distribution, which may indicate that the residuals are not normally distributed.
+
+Scale-Location: the red line is relatively flat, and the spread doesn't fan out or narrow down as we move along the fitted values.However, we do have some points that stand out, 63 and 333, which we might need to look into more because they could be influential points affecting our model.
+
+Residuals vs Leverage: most of the data points cluster in the center, which is good because it means they have low leverage and small residuals.However, we do have some points that stand out  63, 351, 5
+
+Interpretation of the model: 
+
+$$Price = -3.047e+06 + (1.526e+03)\times Year + (-1.021e-01)\times Mileage + (2.771e+03)\times Engine size +(-3.031e+03)\times Automatic transmission1 + (-1.093e+04)\times Fuel + (-2.969e+03)\times Drivetrain + (-2.282e+03)\times Damaged + (3.581e+03)\times Navigation Systems1 + (2.387e+03)\times Third_row_seating1 $$
+We can conclude that the year, engine size, presence of navigation system and third row seating have a positive effect on the price. While the mileage, automatic transmission, fuel, drivetrain and damaged decrease the price of the car.
+
+
+## 3.4 Suggest and implement improvements to your model
+
+The alternative approach to address the model weaknesses is to use log transformation on the price variable. This will help to reduce the heteroscedasticity and make the residuals more normally distributed. 
+
+
+```{r}
+m3.lm <- lm(log(car_df$price) ~ car_df$brand + car_df$year + car_df$mileage + car_df$engine_size +   
+                           car_df$automatic_transmission + car_df$fuel + car_df$drivetrain + car_df$min_mpg + 
+                           car_df$max_mpg + car_df$damaged + car_df$first_owner + car_df$navigation_system +  
+                           car_df$bluetooth + car_df$third_row_seating + car_df$heated_seats)
+
+summary(m3.lm)
+```
+Then use the step function to get to our *minimal adequate model*, we do this instead of going step by step manually as we did before.
+
+```{r}
+mam2.lm <- step(m3.lm)
+summary(mam2.lm)
+
+```
+```{r}
+plot(mam2.lm)
+
+```
+The statistical output indicates a strong model fit, with a high Multiple R-squared value of 0.8345 and an Adjusted R-squared of 0.8175, while the very low p-value suggests the model predictors are highly significant. The residual standard error is relatively low, indicating that the residuals are, on average, close to the regression line.
+
+The 1st plot suggests a good fit for the linear model, the variance is quite steady with a few outliers.
+The Q-Q plot closely follows the diagonal line, indicating that the residuals are normally distributed, with a few deviations at the extremes.
+
+# 4. Modelling another dependent variable
+
+## 4.1 Model the likelihood of a car being sold by the first owner (using the first_owner variable provided).
+ 
+Firstly, we transform the 'first owner' variable into a factor, as this conversion is crucial for enhancing the effectiveness and accuracy of the imputation process when utilizing MICE. Following this, 7 missing values (NA) were successfully imputed using the logistic regression method within the MICE framework. It is ideal for binary variables because it can predict the probability of each of the two categories, typically 0 or 1, which aligns perfectly.
+
+In the exploratory data analysis, we discovered that newer cars are more likely to have had only one owner. Additionally, cars with lower mileage tend to be first-owner vehicles. We also observed that cars with a single owner typically have a higher price. Furthermore, the incidence of damage is lower in cars that have had only one owner. Most cars with just one previous owner primarily run on petrol, indicating that vehicles using alternative fuels, like electric or hybrid, tend to be sold or exchanged more often. Bluetooth and Navigation System are popular features among cars that have only had one owner, indicating a possible preference for newer or more technologically equipped car among first owners.
+
+For modelling the 'first_owner' variable, we are selecting logistic regression because: 
+This method is well-suited for the binary variable. It can handle a mix of categorical and numerical variables — like brand, year, mileage, and engine size — to predict the binary outcome of whether a car is being sold by its first owner. This method is beneficial because it not only classifies cars but also quantifies how strongly each feature influences the likelihood of a car being a first-owner vehicle.
+
+```{r}
+m1.lr.fo <- glm(car_df$first_owner ~ car_df$brand + car_df$year + car_df$mileage + car_df$engine_size + 
+                                    car_df$automatic_transmission + car_df$fuel + car_df$drivetrain + car_df$min_mpg +                                     car_df$max_mpg + car_df$damaged + car_df$navigation_system + car_df$bluetooth +                                       car_df$third_row_seating + car_df$heated_seats, family = binomial)
+summary(m1.lr.fo)
+```
+```{r}
+mam.lr.fo <- step(m1.lr.fo)
+summary(mam.lr.fo)
+```
+$$log(\frac{p}{1-p})= (-5.920e+02) + (2.952e-01)\times Year + (-1.337e-05)\times Mileage + (-3.298e+00)\times Fuel$$
+Interpretation of the model: newer cars are more likely to be sold by the first owner, while the mileage and the fuel type have a negative effect on the likelihood of a car being sold by the first owner.
+
+```{r}
+exp(coef(mam.lr.fo))
+```
+For each one-unit increase in the year (presumably, more recent models), the odds of the car being sold by the first owner increase by a factor of about 1.34. This suggests newer cars are more likely to be sold by the first owner.
+
+The coefficient of mileage is very close to 1, indicating that the mileage of the car has a negligible effect on the odds of the car being sold by the first owner.
+
+
+# References  
+[1] Van Buuren, S., & Groothuis-Oudshoorn, K. (2011), "mice: Multivariate Imputation by Chained Equations in R." 
+    (https://search.r-project.org/CRAN/refmans/mice/html/mice.html)
+    
+[2] Baptiste Auguie, Anton Antonov. (2017), "gridExtra: Miscellaneous Functions for "Grid" Graphics."
+    (https://cran.r-project.org/web/packages/gridExtra/index.html),      
+    (https://bookdown.org/rdpeng/RProgDA/the-grid-package.html#find-out-more-about-grid-graphics)
+    
+[3] Hadley Wickham., (2023), "forcats: Tools for Working with Categorical Variables (Factors)"
+    (https://cran.r-project.org/web/packages/forcats/index.html),
+    (https://forcats.tidyverse.org/reference/fct_reorder.html)
+
